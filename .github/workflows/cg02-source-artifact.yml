@@ -1,0 +1,44 @@
+# cg02 / claude-design / GPT-6 Astra Pro
+# Production source staging only: no geometry rebuild, tests, settings changes,
+# added token permissions, installations, deployments or credential changes.
+name: cg02 exact F18 source artifact
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/cg02-source-artifact.yml]
+  workflow_dispatch:
+jobs:
+  stage-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read exact public source revision
+        shell: python
+        run: |
+          import urllib.request, pathlib, hashlib, json, struct
+          root = pathlib.Path('source-artifact')
+          root.mkdir()
+          commit = 'ea5b8f554f234e90a9243d0ea437edc9a7ec2961'
+          url = 'https://raw.githubusercontent.com/g1mmel/jcom-f18/' + commit + '/f18-super-hornet.glb'
+          with urllib.request.urlopen(url, timeout=60) as response:
+              data = response.read()
+          sha = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          if sha != 'e776ef9060720db409083d0233e7d3a7c7ca1447':
+              raise RuntimeError('Source identity mismatch; no substitute permitted')
+          (root / 'f18-super-hornet.glb').write_bytes(data)
+          n = struct.unpack_from('<I', data, 12)[0]
+          scene = json.loads(data[20:20+n])
+          (root / 'scene-index.json').write_text(json.dumps(scene, indent=2))
+          receipt = {'owner':'cg02','source_commit':commit,'git_blob':sha,'bytes':len(data),'sha256':hashlib.sha256(data).hexdigest(),'status':'ORIGINAL_UNMODIFIED_NOT_ACCEPTED'}
+          (root / 'SOURCE_RECEIPT.json').write_text(json.dumps(receipt, indent=2))
+          print(json.dumps(receipt))
+          print('SCENE_COUNTS', {k:len(scene.get(k,[])) for k in ['nodes','meshes','materials','images','animations','skins']})
+          for i,node in enumerate(scene.get('nodes',[])):
+              print('NODE', i, json.dumps(node))
+      - name: Publish source artifact for authorized editing
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: cg02-original-f18-ea5b8f55
+          path: source-artifact/
+          retention-days: 7
+          if-no-files-found: error
